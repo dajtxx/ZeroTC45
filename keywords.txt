@@ -1,0 +1,25 @@
+#######################################
+# Syntax Coloring Map For RTC
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+ZeroTC45	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+setTc4Callback	KEYWORD2
+setTc5Callback	KEYWORD2
+startTc4	KEYWORD2
+startTc5	KEYWORD2
+stopTc4	KEYWORD2
+stopTc5	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
