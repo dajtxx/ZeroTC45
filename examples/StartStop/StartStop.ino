@@ -1,3 +1,8 @@
+/*
+  Demonstrates the use of the ZeroTC45 library for the Arduino Zero and similar.
+
+  This example code is in the public domain
+*/
 #include <ZeroTC45.h>
 
 // All vars are marked as static as they should not be visible outside the scope of this file.
