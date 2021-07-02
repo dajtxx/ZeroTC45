@@ -27,7 +27,7 @@ static voidFuncPtr tc4Callback;
 static voidFuncPtr tc5Callback;
 
 /**
- * Configures the general clock source used to feed the TC4/TC5 timer/counters.
+ * Initialises the library with a resolution of seconds.
  *
  * Uses GCLK 4 by default. GLCK id 4 is no relationship with TC4,
  * it just seems to be free on Arduinos and similar systems.
@@ -35,6 +35,24 @@ static voidFuncPtr tc5Callback;
  * @param gclkId The ID of the GCLK clock source to use as input for TC4 and TC5. Defaults to 4.
  */
 void ZeroTC45::begin(uint8_t gclkId) {
+    resolution = SECONDS;
+    configureGclk(gclkId);
+
+    // Enable TC4 & TC5 in the power manager.
+    PM->APBCMASK.reg |= PM_APBCMASK_TC4;
+    PM->APBCMASK.reg |= PM_APBCMASK_TC5;
+}
+
+/**
+ * Initialises the library with the given resolution.
+ *
+ * Uses GCLK 4 by default. GLCK id 4 is no relationship with TC4,
+ * it just seems to be free on Arduinos and similar systems.
+ *
+ * @param gclkId The ID of the GCLK clock source to use as input for TC4 and TC5. Defaults to 4.
+ */
+void ZeroTC45::begin(Resolution resolution, uint8_t gclkId) {
+    this->resolution = resolution;
     configureGclk(gclkId);
 
     // Enable TC4 & TC5 in the power manager.
@@ -119,7 +137,7 @@ void ZeroTC45::stopTc5() {
  * @param tc The TC to configure, must be TC4 or TC5.
  */
 void stopTC(Tc* tc) {
-	while (tc->COUNT16.STATUS.bit.SYNCBUSY);
+    while (tc->COUNT16.STATUS.bit.SYNCBUSY);
     tc->COUNT16.CTRLBSET.reg |= TC_CTRLBSET_CMD_STOP;
     while (tc->COUNT16.STATUS.bit.SYNCBUSY);
 
@@ -144,17 +162,22 @@ void stopTC(Tc* tc) {
  * @param period The amount of time in seconds between overflow interrupts.
  * @param oneShot If true then the TC one-shot mode is enabled.
  */
-void configureTC(Tc* tc, uint16_t period, boolean oneShot) {
+void ZeroTC45::configureTC(Tc* tc, uint16_t period, boolean oneShot) {
 
     // Disable TC so it can be configured.
-	while (tc->COUNT16.STATUS.bit.SYNCBUSY);
+    while (tc->COUNT16.STATUS.bit.SYNCBUSY);
     tc->COUNT16.CTRLA.reg &= ~TC_CTRLA_ENABLE;
     while (tc->COUNT16.STATUS.bit.SYNCBUSY);
 
-    tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16        // Use 16-bit counting mode.
-                          | TC_CTRLA_WAVEGEN(1)          // Use MFRQ mode so CC0 is 'TOP' and we get an overflow every time CC0 is reached.
-                          | TC_CTRLA_RUNSTDBY            // Run when in standby mode.
-                          | TC_CTRLA_PRESCALER_DIV1024;  // Divide the input GCLK frequency by 1024.
+    uint16_t ctrla = TC_CTRLA_MODE_COUNT16        // Use 16-bit counting mode.
+                   | TC_CTRLA_WAVEGEN(1)          // Use MFRQ mode so CC0 is 'TOP' and we get an overflow every time CC0 is reached.
+                   | TC_CTRLA_RUNSTDBY;           // Run when in standby mode.
+
+    if (resolution == SECONDS) {
+        ctrla |= TC_CTRLA_PRESCALER_DIV1024;      // Divide the input GCLK frequency by 1024.
+    }
+    
+    tc->COUNT16.CTRLA.reg = ctrla;
     while (tc->COUNT16.STATUS.bit.SYNCBUSY);
 
     // In MFRQ mode, one-shot works and will only generate one overflow interrupt.
@@ -199,13 +222,16 @@ void configureTC(Tc* tc, uint16_t period, boolean oneShot) {
  *
  * @param gclkId The ID of the GCLK clock source to use as input for TC4 and TC5.
  */
-void configureGclk(uint8_t gclkId) {
-    // Configure the 32768 Hz oscillator
-    SYSCTRL->XOSC32K.reg = SYSCTRL_XOSC32K_ONDEMAND |
-                           SYSCTRL_XOSC32K_RUNSTDBY |
-                           SYSCTRL_XOSC32K_EN32K |
-                           SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_STARTUP(6) |
-                           SYSCTRL_XOSC32K_ENABLE;
+void ZeroTC45::configureGclk(uint8_t gclkId) {
+
+    if (resolution == SECONDS) {
+        // Configure the 32768 Hz oscillator when counting seconds.
+        SYSCTRL->XOSC32K.reg = SYSCTRL_XOSC32K_ONDEMAND |
+                               SYSCTRL_XOSC32K_RUNSTDBY |
+                               SYSCTRL_XOSC32K_EN32K |
+                               SYSCTRL_XOSC32K_XTALEN | SYSCTRL_XOSC32K_STARTUP(6) |
+                               SYSCTRL_XOSC32K_ENABLE;
+    }
 
     //========== GCLK configuration - this is the source clock for the TC.
 
@@ -214,18 +240,24 @@ void configureGclk(uint8_t gclkId) {
     // GCLK_GENDIV_DIV(Y) specifies the clock prescalar / divider
     // If GENCTRL.DIVSEL is set (see further below) the divider
     // is 2^(Y+1). If GENCTRL.DIVSEL is 0, the divider is simply Y
-    // This register has to be written in a single operation
-    GCLK->GENDIV.reg = GCLK_GENDIV_ID(gclkId) | GCLK_GENDIV_DIV(4);
+    // This register has to be written in a single operation.
+    GCLK->GENDIV.reg = GCLK_GENDIV_ID(gclkId) | GCLK_GENDIV_DIV(4);  // This divisor works for both seconds and milliseconds.
     // GENDIV is not write sync
 
     // Configure the GCLK module
     // With this configuration the output from this module is 1khz (32khz / 32)
     // This register has to be written in a single operation.
     while (GCLK->STATUS.bit.SYNCBUSY);
-    GCLK->GENCTRL.reg = GCLK_GENCTRL_GENEN          // GCLK_GENCTRL_GENEN, enable the specific GCLK module
-                      | GCLK_GENCTRL_SRC_XOSC32K    // GCLK_GENCTRL_SRC_XOSC32K, set the source to the XOSC32K
-                      | GCLK_GENCTRL_ID(gclkId)     // GCLK_GENCTRL_ID(X), specifies which GCLK is being configured
-                      | GCLK_GENCTRL_DIVSEL;        // GCLK_GENCTRL_DIVSEL, specify the divider is 2^(GENDIV.DIV+1)
+    
+    uint32_t genctrl = GCLK_GENCTRL_GENEN          // GCLK_GENCTRL_GENEN, enable the specific GCLK module
+                      | GCLK_GENCTRL_ID(gclkId)    // GCLK_GENCTRL_ID(X), specifies which GCLK is being configured
+                      | GCLK_GENCTRL_DIVSEL;       // GCLK_GENCTRL_DIVSEL, specify the divider is 2^(GENDIV.DIV+1)
+
+    // For seconds, use a 32.768 khz source with dividers 32 and 1024.
+    // For milliseconds, use a 32 khz source with a divider of 32.
+    genctrl |= (resolution == SECONDS) ? GCLK_GENCTRL_SRC_XOSC32K : GCLK_GENCTRL_SRC_OSCULP32K;
+    
+    GCLK->GENCTRL.reg = genctrl;
     while (GCLK->STATUS.bit.SYNCBUSY);
 
     // Set TC4 (shared with TC5) GCLK source to gclkId

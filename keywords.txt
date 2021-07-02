@@ -23,3 +23,6 @@ stopTc5	KEYWORD2
 #######################################
 # Constants (LITERAL1)
 #######################################
+
+SECONDS LITERAL1
+MILLISECONDS LITERAL1

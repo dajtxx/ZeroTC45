@@ -25,8 +25,11 @@
 typedef void(*voidFuncPtr)(void);
 
 class ZeroTC45 {
-public:
 
+public:
+    /// Valid resolutions for the timers. Both timers will use the selected resolution.
+    enum Resolution { MILLISECONDS, SECONDS };
+    
     /**
      * Create an instance of the ZeroTC45 class.
      *
@@ -35,8 +38,11 @@ public:
      */
     ZeroTC45() {};
 
-     /// Initialise the ZeroTC45 object. This must be called before any other methods.
+    /// Initialise the ZeroTC45 object. This must be called before any other methods.
     void begin(uint8_t gclkId = 4);
+
+    /// Initialise the ZeroTC45 object to use the given resolution. Both timers will use this resolution. This must be called before any other methods.
+    void begin(Resolution resoluion, uint8_t gclkId = 4);
 
     /// Set the callback function for the TC4 interrupt.
     void setTc4Callback(voidFuncPtr callback);
@@ -55,5 +61,11 @@ public:
 
     /// Stop TC5.
     void stopTc5();
+
+private:
+    void configureTC(Tc* tc, uint16_t period, boolean oneShot);
+    void configureGclk(uint8_t gclkId);
+    
+    Resolution resolution;
 };
 #endif
